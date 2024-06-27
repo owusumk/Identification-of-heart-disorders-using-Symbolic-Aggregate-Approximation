@@ -1,0 +1,280 @@
+---
+title: "Adherence Screening Preliminary Report"
+author: "Adane Wogu, Moses Owusu"
+date: today
+format: 
+  html:
+    embed-resources: true
+    anchor-sections: false
+    table-of-contents: true
+execute:
+  echo: false
+---
+
+
+
+```{r setup}
+#| echo: false
+#| warning: false
+#| message: false
+
+# load packages and data
+library(dplyr, warn.conflicts=FALSE)
+library(janitor, warn.conflicts=FALSE)
+library(lubridate, warn.conflicts=FALSE)
+library(kableExtra, warn.conflicts=FALSE)
+library(tidyr)
+library(CIDAtools)
+library(DT)
+library(gt)
+library(gtsummary)
+library(readxl)
+library(ggplot2, warn.conflicts=FALSE)
+theme_set(theme_bw())
+
+#load data
+df_complete <- read_excel("/Users/owusum/Desktop/MKO/Hitchcock_screening_adherence/DataRaw/FinalSingleSpreadsheet.xlsx", sheet = "Sheet1") # dim 1603*16
+```
+
+
+
+```{r}
+#data cleaning
+
+#remove participants with negative CT_NumberDays and those with NA's
+df_current <- df_complete %>%
+  filter(CT_NumberDays >= 0) #dim 1400*16
+```
+
+
+# Introduction
+
+This report gives a summary of the data provided for the Analysis. It was generated `r paste(format(Sys.Date(), '%B %d, %Y'))` and highlights the key variables present in the data. The provided data has a total of `r dim(df_complete)[1]` rows and `r dim(df_complete)[2]` columns. There are a total of `r dim(df_complete %>% filter(CT_NumberDays < 0))[1]` observations with negative `CT_NumberDays` and `r dim(df_complete %>% filter(is.na(CT_NumberDays)))[1]` missing values. These were removed so `r dim(df_current)` observations were used in the analysis. 
+
+
+
+## Stratified by Urbanicity
+
+@tbl-variable-by-urbanicity gives the summary of variables with a breakdown by `urbanicity` (rural, urban, highly rural). Unknown under the `Unenrollment reason` corresponds to those who were enrolled as at the time of data collection.
+ 
+```{r, warning=FALSE, message=FALSE}
+#| label: tbl-variable-by-urbanicity
+#| tbl-cap: !expr 'paste("Variable by Urbanicity")' 
+
+df_current <- df_current %>%
+   mutate(Gender = case_when(
+    Gender == "F" ~ "Female",
+    Gender == "M" ~ "Male",
+  )) %>%
+  mutate(GISURH = case_when(
+    GISURH == "H" ~ "Highly rural",
+    GISURH == "U" ~ "Urban",
+    GISURH == "R" ~ "Rural"
+  ))%>%
+  mutate(enrol_year = factor(SDM_Year, levels = c("2021", "2022", "2023")))%>%
+  mutate(smoke_status = case_when(
+    Current_Smoke_Status %in% c(2007:2023) ~ "former",
+    Current_Smoke_Status == "current" ~ "current"
+  ))
+   
+tab1 <- df_current %>%
+  select( enrol_year, Age_at_SDM, Current_Smoke_Status, smoke_status, Enrollment_Status, Unenrollment_Reason, GISURH, Gender, Ethnicity, CT_Procedure, CT_NumberDays, CT_Year, LungRAD_Score, RN, `Max RN Count`)%>%
+  tbl_summary(by = GISURH,
+              label=list(Age_at_SDM ~ "Age (years)",
+                         Enrollment_Status ~ "Enrollment Status",
+                         RN ~ "Number of scans completed",
+                        LungRAD_Score ~ "Scan score",
+                        enrol_year ~ "Year participant enrolled",
+                        Unenrollment_Reason ~ "Unenrollment Reason",
+                        CT_Procedure ~ "CT scan ordered",
+                        CT_NumberDays ~ "Days between enrollment and CT scan",
+                        CT_Year ~ "Year CT scan completed",
+                        `Max RN Count` ~ "Total number of scans patients completed",
+                        Current_Smoke_Status ~ "Smoking status or year stopped",
+                        smoke_status ~ "Smoking status"), 
+              statistic = list(Age_at_SDM ~ "{mean} ({sd})"),
+              digits = list(Age_at_SDM = c(2,2))) %>%
+  add_overall() %>%
+  #add_p(test = list(all_categorical() ~ "fisher.test")) %>%
+  #add_p()%>%
+  #modify_footnote(everything() ~ NA) %>%
+  modify_spanning_header(c("stat_1", "stat_2", "stat_3") ~ "**Urbanicity**") %>%
+  modify_header(label = "**Variable**")%>%
+  bold_labels() %>%
+  as_kable_extra() %>%
+  kable_styling(bootstrap_options=c("striped", "condensed"), fixed_thead=T,
+                full_width=F)
+  #footnote(general="n(%); Mean(SD)")
+
+tab1
+```
+
+
+
+## Demographic summaries by levels
+
+:::panel-tabset
+
+### Age by Urbanicty and Smoking status
+@fig-age-by-urbanicity-smoke
+```{r}
+#| label: fig-age-by-urbanicity-smoke
+#| fig-cap: !expr 'paste("Age Distribution by urbanicity")' 
+#| message: false
+#| warning: false
+
+ggplot(data = df_current, mapping = aes(x = CT_NumberDays, y = Age_at_SDM)) +
+  geom_point(mapping = aes(color = smoke_status )) +
+  facet_wrap( ~GISURH) +
+  labs(x = "Days between enrollment and scan", y = "Age (in years)", col = "smoking Status")
+```
+
+### Age by Enrollment year and Smoking status
+
+@fig-age-by-enrol-year-smoke
+```{r}
+#| label: fig-age-by-enrol-year-smoke
+#| fig-cap: !expr 'paste("Age Distribution by Enrollment year")' 
+#| message: false
+#| warning: false
+
+ggplot(data = df_current, mapping = aes(x = CT_NumberDays, y = Age_at_SDM)) +
+  geom_point(mapping = aes(color = smoke_status )) +
+  facet_wrap( ~enrol_year) +
+  labs(x = "Days between enrollment and scan", y = "Age (in years)", col = "smoking Status")
+```
+
+
+
+### Smoking status by days between scan
+@fig-enrol-year-by-status
+```{r}
+#| label: fig-enrol-year-by-status
+#| fig-cap: !expr 'paste("Smoking status by Age and Scan days")' 
+#| message: false
+#| warning: false
+
+ggplot(data = df_current, mapping = aes(x = Age_at_SDM, y = CT_NumberDays))+
+  geom_point(mapping = aes(color = Enrollment_Status)) +
+  labs(x = "Age (in years)", y = "Days between enrollment and scan (in days)", col = "smoking Status")
+```
+
+
+### Enrollment year by unenrollment reason
+@fig-age-by-enrol-year-by-unenrol-reason
+```{r}
+#| label: fig-age-by-enrol-year-by-unenrol-reason
+#| fig-cap: !expr 'paste("Age distribution by enrollment year for unenrollment reason")' 
+#| message: false
+#| warning: false
+
+ggplot(data = df_current %>%
+         filter(!is.na(Unenrollment_Reason))) +
+  geom_point(mapping = aes(x = CT_NumberDays, y = Age_at_SDM, col = enrol_year)) +
+  facet_wrap(~ Unenrollment_Reason, nrow = 2) +
+   labs(x = "Days between enrollment and scan", y = "Age (in years)", col = "Enrollment year")
+```
+
+
+### Days between scan and enrollment year
+@fig-age-by-days-btn-enrol-scan
+
+```{r}
+#| label: fig-age-by-days-btn-enrol-scan
+#| fig-cap: !expr 'paste("Age distribution by days between enrollment and scan")' 
+#| message: false
+#| warning: false
+
+ggplot(data = df_current %>%
+         filter(!is.na(Unenrollment_Reason))) +
+  geom_point(mapping = aes(x = CT_NumberDays, y = Age_at_SDM, col = enrol_year)) +
+   labs(x = "Days between enrollment and scan", y = "Age (in years)", col = "Enrollment year")
+```
+
+
+### Age by number of scans for those with Lung cancer
+
+@fig-lungcancer-by-RN
+
+```{r}
+#| label: fig-lungcancer-by-RN
+#| fig-cap: !expr 'paste("Age distribution and scan days for those with Lung cancer")' 
+#| message: false
+#| warning: false
+
+ggplot(data = df_current %>%
+         filter(Unenrollment_Reason == "Lung Cancer")) +
+  geom_point(mapping = aes(x = CT_NumberDays, y = Age_at_SDM, col = factor(RN))) +
+   labs(x = "Days between enrollment and scan", y = "Age (in years)", col = "Number of scans completed")
+```
+:::
+
+
+
+## Distribution of numeric variables 
+:::panel-tabset 
+
+### Age of participants
+```{r}
+#| label: fig-age-histogram
+#| fig-cap: !expr 'paste("Age distribution of participants")' 
+#| message: false
+#| warning: false
+
+avg_age <- mean(df_current$Age_at_SDM, na.rm = T)
+std_age <- sd(df_current$Age_at_SDM, na.rm = T)
+ hist(df_current$Age_at_SDM, main = "", ylab = "Probability", xlab = "Age (in years)", col = "lightblue", border = "black", probability = T);
+curve(dnorm(x, mean = avg_age, sd = std_age), lwd = 2, col = 'red', add = T)
+ legend("topright", legend = c("Histogram", "Normal Distribution Curve"), fill = c("lightblue", "red"))
+```
+
+### Number of days between enrollment and scan
+```{r}
+#| label: fig-days-histogram
+#| fig-cap: !expr 'paste("Days between enrollment and scan")' 
+#| message: false
+#| warning: false
+
+avg_days <- mean(df_current$CT_NumberDays, na.rm = T)
+std_days <- sd(df_current$CT_NumberDays, na.rm = T)
+ hist(df_current$CT_NumberDays, main = "", ylab = "Probability", xlab = "Days between enrollment and scan", col = "lightblue", border = "black", probability = T);
+curve(dnorm(x, mean = avg_days, sd = std_days), lwd = 2, col = 'red', add = T)
+ legend("topright", legend = c("Histogram", "Normal Distribution Curve"), fill = c("lightblue", "red"))
+```
+:::
+
+
+
+## Distribution by urban status
+:::panel-tabset 
+
+### Age distribution across urban status
+```{r}
+#| label: fig-age-urban
+#| fig-cap: !expr 'paste("Age distribution of participants across urban status")' 
+#| message: false
+#| warning: false
+
+df_current %>%
+  ggplot(aes(x = smoke_status, color = smoke_status, y = Age_at_SDM)) +
+  geom_boxplot() +
+  facet_wrap(~GISURH, scales = "free")+
+  labs(x = "Smoking Status", y = "Age (in years)", col = "Smoking Status")
+```
+
+
+### Days between scan and enrollment by urban status
+```{r}
+#| label: fig-days-urban
+#| fig-cap: !expr 'paste("Days distribution of participants across urban status")' 
+#| message: false
+#| warning: false
+
+df_current %>%
+  ggplot(aes(x = smoke_status, color = smoke_status, y = CT_NumberDays)) +
+  geom_boxplot() +
+  facet_wrap(~GISURH, scales = "free")+
+  labs(x = "Smoking Status", y = "Days between enrollment and scan", col = "Smoking Status")
+```
+:::
+
